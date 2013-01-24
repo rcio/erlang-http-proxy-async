@@ -15,7 +15,6 @@ request(URL, PID) ->
 	       end).
 
 spawn_request(URL, PID) ->
-    io:format("Worker begin working: ~n~p~n", [URL]),
     case httpc:request(get, {URL, []}, [{timeout, 10000}], []) of
 	{ok, {{_Protocal, 200, _Status}, _Headers, Body}} ->
 	    PID ! {res, Body};

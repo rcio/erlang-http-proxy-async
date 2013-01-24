@@ -66,7 +66,7 @@ post_process(Req) ->
 
     Response  = response_loop(length(UrlList), DeadTime),
 
-    Req:respond({200, [], [Response]}).
+    Req:respond({200, [], [mochijson2:encode({struct, [{"result", Response}]})]}).
 
 get_url_list(PostData) ->
     get_url_list(PostData, []).
@@ -107,7 +107,7 @@ response_loop(Len, ResList, DeadTime) ->
 	false ->
 	    receive 
 		{res, Res} ->
-		    response_loop(Len - 1, [Res|ResList], DeadTime);
+		    response_loop(Len - 1, [list_to_binary(Res)|ResList], DeadTime);
 		error ->
 		    response_loop(Len - 1, ResList, DeadTime);
 		_ ->
