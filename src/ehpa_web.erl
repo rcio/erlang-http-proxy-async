@@ -23,6 +23,7 @@ stop() ->
 
 loop(Req, _DocRoot) ->
     "/" ++ Path = Req:get(path),
+    io:format("~p", [Req]),
     try
 	case Path of
 	    "apns" ->
