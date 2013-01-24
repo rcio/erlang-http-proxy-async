@@ -23,10 +23,9 @@ stop() ->
 
 loop(Req, _DocRoot) ->
     "/" ++ Path = Req:get(path),
-    io:format("~p", [Req]),
     try
 	case Path of
-	    "apns" ->
+	    "ehpa" ->
 		post_process(Req);
 	    _ ->
             Req:respond({404, [], []})
@@ -50,14 +49,71 @@ get_option(Option, Options) ->
 
 post_process(Req) ->
     PostData = Req:parse_post(),
-    Token = proplists:get_value("token", PostData, []),
-    Badge = proplists:get_value("badge", PostData, 0),
-    Msg = proplists:get_value("message", PostData, []),
-    case Token of
-	[] ->
-	    Req:respond({500, [], []});
+    UrlList = get_url_list(PostData),
+
+    Timeout = case string:to_integer(proplists:get_value("timeout", PostData, [])) of
+		  {error, _} ->
+		      5000;
+		  {Res, _} ->
+		      Res
+	      end,
+
+    send_request(UrlList),
+
+    {MegaSecs, Secs , MicroSecs} = erlang:now(),
+    Now = (MegaSecs * 1000000 + Secs) * 1000 + round(MicroSecs / 1000),
+    DeadTime = Now + Timeout,
+
+    Response  = response_loop(length(UrlList), DeadTime),
+
+    Req:respond({200, [], [Response]}).
+
+get_url_list(PostData) ->
+    get_url_list(PostData, []).
+
+get_url_list([], ResList) ->
+    ResList;
+
+get_url_list([H|T], ResList) ->
+    case H of
+	{"url", Url} ->
+	    get_url_list(T, [Url|ResList]);
 	_ ->
-	    apns:send_message(unicode:characters_to_list(list_to_binary(Msg)), list_to_integer(Badge), Token),
-	    Req:respond({200, [], []})
+	    get_url_list(T, ResList)
     end.
 
+
+send_request([]) ->
+    ok;
+
+send_request([H|T]) ->
+    ehpa_request:request(H, self()),
+    send_request(T).
+
+
+response_loop(Len, DeadTime) ->
+    response_loop(Len, [], DeadTime).
+
+response_loop(0, ResList, _) ->
+    ResList;
+
+response_loop(Len, ResList, DeadTime) ->
+    {MegaSecs, Secs, MicroSecs} = erlang:now(),
+    Now = (MegaSecs * 1000000 + Secs) * 1000 + round(MicroSecs / 1000),
+
+    case Now > DeadTime of
+	true ->
+	    ResList;
+	false ->
+	    receive 
+		{res, Res} ->
+		    response_loop(Len - 1, [Res|ResList], DeadTime);
+		error ->
+		    response_loop(Len - 1, ResList, DeadTime);
+		_ ->
+		    response_loop(Len, ResList, DeadTime)
+	    after 100 ->
+		    response_loop(Len, ResList, DeadTime)
+	    end
+    end.
+	    

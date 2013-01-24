@@ -10,15 +10,15 @@
 -export([request/2]).
 
 request(URL, PID) ->
-    spawn(fun () ->
-		  spawn_request(URL, PID)
-	  end).
+    spawn_link(fun () ->
+		       spawn_request(URL, PID)
+	       end).
 
 spawn_request(URL, PID) ->
-    case httpc:request(get, {URL, []}, [{timeout, 5000}], []) of
+    io:format("Worker begin working: ~n~p~n", [URL]),
+    case httpc:request(get, {URL, []}, [{timeout, 10000}], []) of
 	{ok, {{_Protocal, 200, _Status}, _Headers, Body}} ->
-	    io:format("~p", [Body]),
-	    PID ! Body;
-	_ ->
+	    PID ! {res, Body};
+	_Err ->
 	    PID ! error
     end.
