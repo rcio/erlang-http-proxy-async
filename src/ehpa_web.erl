@@ -82,13 +82,15 @@ get_url_list([H|T], ResList) ->
 	    get_url_list(T, ResList)
     end.
 
+send_request(UrlList) ->
+    send_request(UrlList, 1).
 
-send_request([]) ->
+send_request([], _) ->
     ok;
 
-send_request([H|T]) ->
-    ehpa_request:request(H, self()),
-    send_request(T).
+send_request([H|T], Seq) ->
+    ehpa_request:request(H, Seq, self()),
+    send_request(T, Seq+1).
 
 
 response_loop(Len, DeadTime) ->
@@ -106,7 +108,7 @@ response_loop(Len, ResList, DeadTime) ->
 	    ResList;
 	false ->
 	    receive 
-		{res, Res} ->
+		{res, Seq, Res} ->
 		    response_loop(Len - 1, [list_to_binary(Res)|ResList], DeadTime);
 		error ->
 		    response_loop(Len - 1, ResList, DeadTime);
