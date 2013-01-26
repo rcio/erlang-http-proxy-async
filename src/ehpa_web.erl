@@ -49,7 +49,7 @@ get_option(Option, Options) ->
 
 post_process(Req) ->
     PostData = Req:parse_post(),
-    UrlList = get_url_list(PostData),
+    UrlList = [X || {"url", X} <- PostData],
 
     Timeout = case string:to_integer(proplists:get_value("timeout", PostData, [])) of
 		  {error, _} ->
@@ -64,23 +64,10 @@ post_process(Req) ->
     Now = (MegaSecs * 1000000 + Secs) * 1000 + round(MicroSecs / 1000),
     DeadTime = Now + Timeout,
 
-    Response  = response_loop(length(UrlList), DeadTime),
+    ResDict = response_loop(length(UrlList), DeadTime),
+    Response = jsonList(ResDict, length(UrlList)),
 
     Req:respond({200, [], [mochijson2:encode({struct, [{"result", Response}]})]}).
-
-get_url_list(PostData) ->
-    get_url_list(PostData, []).
-
-get_url_list([], ResList) ->
-    ResList;
-
-get_url_list([H|T], ResList) ->
-    case H of
-	{"url", Url} ->
-	    get_url_list(T, [Url|ResList]);
-	_ ->
-	    get_url_list(T, ResList)
-    end.
 
 send_request(UrlList) ->
     send_request(UrlList, 1).
@@ -94,28 +81,44 @@ send_request([H|T], Seq) ->
 
 
 response_loop(Len, DeadTime) ->
-    response_loop(Len, [], DeadTime).
+    ResDict = dict:new(),
+    response_loop(Len, ResDict, DeadTime).
 
-response_loop(0, ResList, _) ->
-    ResList;
+response_loop(0, ResDict, _) ->
+    ResDict;
 
-response_loop(Len, ResList, DeadTime) ->
+response_loop(Len, ResDict, DeadTime) ->
     {MegaSecs, Secs, MicroSecs} = erlang:now(),
     Now = (MegaSecs * 1000000 + Secs) * 1000 + round(MicroSecs / 1000),
 
     case Now > DeadTime of
 	true ->
-	    ResList;
+	    ResDict;
 	false ->
 	    receive 
 		{res, Seq, Res} ->
-		    response_loop(Len - 1, [list_to_binary(Res)|ResList], DeadTime);
+		    response_loop(Len - 1, dict:store(Seq, Res, ResDict), DeadTime);
 		error ->
-		    response_loop(Len - 1, ResList, DeadTime);
+		    response_loop(Len - 1, ResDict, DeadTime);
 		_ ->
-		    response_loop(Len, ResList, DeadTime)
+		    response_loop(Len, ResDict, DeadTime)
 	    after 100 ->
-		    response_loop(Len, ResList, DeadTime)
+		    response_loop(Len, ResDict, DeadTime)
 	    end
     end.
 	    
+
+jsonList(JsonDict, Seq) ->
+    jsonList(JsonDict, 1, Seq, []).
+
+jsonList(_JsonDict, N, Seq, ResList) when N > Seq ->
+    lists:reverse(ResList);
+
+jsonList(JsonDict, N, Seq, ResList) ->
+    Value = case dict:is_key(N, JsonDict) of
+		true ->
+		    dict:fetch(N, JsonDict);
+		false ->
+		    ""
+	    end,
+    jsonList(JsonDict, N+1, Seq, [list_to_binary(Value) | ResList]).	    
